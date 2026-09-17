@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
+import { MarkerClusterer } from '@googlemaps/markerclusterer'
 
 type MapVehicle = {
   id: string
@@ -42,6 +43,7 @@ function positionFor(vehicle: MapVehicle) {
 export function MapView({ vehicles, sites, selectedId, onSelect }: MapViewProps) {
   const mapRef = useRef<google.maps.Map | null>(null)
   const markersRef = useRef<google.maps.Marker[]>([])
+  const clusterersRef = useRef<MarkerClusterer[]>([])
   const siteMarkersRef = useRef<google.maps.Marker[]>([])
   const polylinesRef = useRef<google.maps.Polyline[]>([])
   const onSelectRef = useRef(onSelect)
@@ -72,13 +74,17 @@ export function MapView({ vehicles, sites, selectedId, onSelect }: MapViewProps)
   useEffect(() => {
     const map = mapRef.current
     if (!map || !window.google || !mapReady) return
+    clusterersRef.current.forEach((clusterer) => clusterer.clearMarkers())
+    clusterersRef.current = []
     markersRef.current.forEach((marker) => marker.setMap(null))
     markersRef.current = vehicles.map((vehicle) => {
-      const marker = new google.maps.Marker({ map, position: positionFor(vehicle), title: `${vehicle.line} to ${vehicle.destination}`, label: { text: vehicle.line, color: '#ffffff', fontSize: '11px', fontWeight: '700' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: vehicle.id === selectedId ? 12 : 9, fillColor: vehicle.color, fillOpacity: 1, strokeColor: vehicle.id === selectedId ? '#ffffff' : '#16334b', strokeWeight: vehicle.id === selectedId ? 4 : 2 } })
+      const marker = new google.maps.Marker({ position: positionFor(vehicle), title: `${vehicle.line} to ${vehicle.destination}`, label: { text: vehicle.line, color: '#ffffff', fontSize: '11px', fontWeight: '700' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: vehicle.id === selectedId ? 12 : 9, fillColor: vehicle.color, fillOpacity: 1, strokeColor: vehicle.id === selectedId ? '#ffffff' : '#16334b', strokeWeight: vehicle.id === selectedId ? 4 : 2 } })
       marker.addListener('click', () => onSelectRef.current(vehicle.id))
       return marker
     })
-    return () => markersRef.current.forEach((marker) => marker.setMap(null))
+    const modes: MapVehicle['mode'][] = ['Metro', 'Train', 'Tram', 'Bus']
+    clusterersRef.current = modes.map((mode) => new MarkerClusterer({ map, markers: vehicles.filter((vehicle) => vehicle.mode === mode).map((vehicle) => markersRef.current[vehicles.indexOf(vehicle)]) }))
+    return () => { clusterersRef.current.forEach((clusterer) => clusterer.clearMarkers()); markersRef.current.forEach((marker) => marker.setMap(null)) }
   }, [vehicles, selectedId, mapReady])
 
   useEffect(() => {
