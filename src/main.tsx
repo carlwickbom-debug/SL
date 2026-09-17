@@ -38,7 +38,7 @@ function IconForMode({ mode }: { mode: Mode }) {
 
 function App() {
   const [vehicles, setVehicles] = useState(initialVehicles)
-  const [selectedId, setSelectedId] = useState(initialVehicles[0].id)
+  const [selectedId, setSelectedId] = useState(initialVehicles[0]?.id ?? '')
   const [activeMode, setActiveMode] = useState<'All' | Mode>('All')
   const [query, setQuery] = useState('')
   const [sites, setSites] = useState(fallbackSites)
@@ -87,7 +87,7 @@ function App() {
     const counts = mapVehicles.reduce<Record<Mode, number>>((summary, vehicle) => ({ ...summary, [vehicle.mode]: summary[vehicle.mode] + 1 }), { Metro: 0, Train: 0, Tram: 0, Bus: 0 })
     return `Subway ${counts.Metro} · trains ${counts.Train} · trams ${counts.Tram} · buses ${counts.Bus}`
   }, [mapVehicles])
-  const selected = vehicles.find((vehicle) => vehicle.id === selectedId) ?? emptyVehicle
+  const selected = vehicles.find((vehicle) => vehicle.id === selectedId) ?? vehicles[0] ?? emptyVehicle
   const lateCount = vehicles.filter((vehicle) => vehicle.delay > 0).length
 
   return <div className="app-shell">
