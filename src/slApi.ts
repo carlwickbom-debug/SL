@@ -11,6 +11,7 @@ export type LiveVehicle = {
   status: string
   latitude: number
   longitude: number
+  timestamp: number
   updated: string
   nextStop: string
   operator: string
@@ -30,9 +31,10 @@ export type LiveTransitData = {
   timestamp: number
 }
 
-const API_ROOT = 'https://opendata.samtrafiken.se/gtfs-rt-sweden/sl'
+const API_ROOT = 'https://opendata.samtrafiken.se/gtfs-rt/sl'
 const stockholmBounds = { minLat: 59.20, maxLat: 59.45, minLon: 17.75, maxLon: 18.35 }
 const colors = { Metro: '#f04b53', Bus: '#3ca477', Train: '#e5b72d', Tram: '#1997aa' }
+const MAX_POSITION_AGE_MS = 120_000
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -67,10 +69,12 @@ async function decodeFeed(path: string, key: string): Promise<any> {
 export async function fetchLiveTransitData(key: string): Promise<LiveTransitData> {
   if (!key) throw new Error('Missing TRAFIKLAB_GTFS_RT_KEY')
   const [vehicleFeed, tripFeed, alertFeed] = await Promise.all([
-    decodeFeed('VehiclePositionsSweden.pb', key),
-    decodeFeed('TripUpdatesSweden.pb', key),
-    decodeFeed('ServiceAlertsSweden.pb', key),
+    decodeFeed('VehiclePositions.pb', key),
+    decodeFeed('TripUpdates.pb', key),
+    decodeFeed('ServiceAlerts.pb', key),
   ])
+  const feedTimestamp = number(vehicleFeed.header?.timestamp) * 1000
+  if (!feedTimestamp || Date.now() - feedTimestamp > MAX_POSITION_AGE_MS) throw new Error('Vehicle-position feed is stale')
 
   const tripDelays = new Map<string, number>()
   for (const entity of tripFeed.entity ?? []) {
@@ -87,11 +91,13 @@ export async function fetchLiveTransitData(key: string): Promise<LiveTransitData
     const latitude = number(position?.latitude, NaN)
     const longitude = number(position?.longitude, NaN)
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue
+    const timestamp = number(entity.vehicle?.timestamp, feedTimestamp / 1000) * 1000
+    if (timestamp <= 0 || Date.now() - timestamp > MAX_POSITION_AGE_MS) continue
     const mode = modeFor(text(trip?.routeId), text(descriptor?.id))
     const id = text(descriptor?.id) || text(entity.id) || `vehicle-${vehicles.length + 1}`
     const tripId = text(trip?.tripId)
     const delay = Math.max(0, tripDelays.get(tripId) ?? 0)
-    vehicles.push({ id, line: text(trip?.routeId) || 'SL', mode, destination: text(trip?.tripHeadsign) || 'Destination unavailable', speed: Math.round(number(position?.speed) * 3.6), delay, occupancy: 0, status: delay > 0 ? 'Running late' : 'In service', latitude, longitude, updated: 'just now', nextStop: text(trip?.stopId) || 'Next stop unavailable', operator: 'SL' })
+    vehicles.push({ id, line: text(trip?.routeId) || 'SL', mode, destination: text(trip?.tripHeadsign) || 'Destination unavailable', speed: Math.round(number(position?.speed) * 3.6), delay, occupancy: 0, status: delay > 0 ? 'Running late' : 'In service', latitude, longitude, timestamp, updated: `${Math.max(0, Math.round((Date.now() - timestamp) / 1000))} sec ago`, nextStop: text(trip?.stopId) || 'Next stop unavailable', operator: 'SL' })
   }
 
   const alerts: ServiceAlert[] = []
@@ -102,7 +108,7 @@ export async function fetchLiveTransitData(key: string): Promise<LiveTransitData
     alerts.push({ id: text(entity.id) || `alert-${alerts.length + 1}`, header: text(translation?.text) || 'Service alert', description: text(description?.text), cause: text(alert?.cause), effect: text(alert?.effect) })
   }
 
-  return { vehicles, alerts, timestamp: Date.now() }
+  return { vehicles, alerts, timestamp: feedTimestamp }
 }
 
 export function toDashboardVehicle(vehicle: LiveVehicle, index: number) {
