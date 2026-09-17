@@ -21,4 +21,6 @@ The feeds are decoded in the browser with `gtfs-realtime-bindings`. If the brows
 
 The local key is read from `VITE_TRAFIKLAB_GTFS_RT_KEY` in `.env.local`, which is ignored by Git. The supplied key currently returns `403 Key does not have access to file` from the three GTFS-RT endpoints, so a key with access to the SL files is required for live records.
 
+The map uses Google Maps JavaScript API. Add a browser-restricted Google Maps key as `VITE_GOOGLE_MAPS_API_KEY` in `.env.local`, with Maps JavaScript API enabled. Without that key, the dashboard keeps its fallback schematic map.
+
 No server or database is required. API keys, if needed by a future provider, should be supplied through Google AI Studio's environment rather than committed to this project.

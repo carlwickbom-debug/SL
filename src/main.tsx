@@ -3,9 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { Activity, AlertTriangle, Bus, CableCar, ChevronRight, Clock3, Crosshair, Gauge, LocateFixed, MapPin, Radio, RefreshCw, Search, Settings2, TrainFront, TramFront, Wifi } from 'lucide-react'
 import './styles.css'
 import { fetchLiveTransitData, toDashboardVehicle } from './slApi'
+import { MapView } from './MapView'
 
 type Mode = 'Metro' | 'Bus' | 'Train' | 'Tram'
-type Vehicle = { id: string; line: string; mode: Mode; destination: string; speed: number; delay: number; occupancy: number; status: string; lat: number; left: number; color: string; updated: string; nextStop: string; operator: string }
+type Vehicle = { id: string; line: string; mode: Mode; destination: string; speed: number; delay: number; occupancy: number; status: string; lat: number; left: number; latitude?: number; longitude?: number; color: string; updated: string; nextStop: string; operator: string }
 type Site = { name: string; lat: number; lon: number }
 
 const initialVehicles: Vehicle[] = [
@@ -85,6 +86,7 @@ function App() {
 
   return <div className="app-shell">
     <header className="topbar"><div className="brand"><div className="brand-mark"><Activity size={21} /></div><div><strong>SL / NETWORK PULSE</strong><span>STOCKHOLM TRANSPORT CONTROL</span></div></div><div className="topbar-actions"><div className="live-state"><span className="pulse-dot" /> LIVE <small>updated {lastSync}</small></div><button className="icon-button" title="Settings"><Settings2 size={18} /></button><div className="avatar">CP</div></div></header>
+    <MapView vehicles={vehicles} sites={sites} selectedId={selectedId} onSelect={setSelectedId} />
     <main>
       <section className="headline"><div><p className="eyebrow">THURSDAY 17 SEPTEMBER 2026 / 08:42 CET</p><h1>Good morning, Carla.</h1><p className="subhead">A clear view of every moving part across the SL network.</p></div><button className={`sync-button ${isLive ? 'active' : ''}`} onClick={() => { setIsLive(!isLive); setLastSync('just now') }}><RefreshCw size={16} /> {isLive ? 'Live feed on' : 'Feed paused'}</button></section>
       <section className="stats-grid"><Stat label="Vehicles tracked" value={vehicles.length.toLocaleString()} detail={feedError ? 'Fallback fleet active' : 'Live GTFS-RT positions'} tone="teal" icon={<Radio size={17} />} /><Stat label="On time now" value={`${vehicles.length ? Math.round(((vehicles.length - lateCount) / vehicles.length) * 100) : 0}%`} detail="Within 2 min of schedule" tone="yellow" icon={<Clock3 size={17} />} /><Stat label="Network status" value={feedError ? 'Fallback' : 'Good'} detail={`${alertCount} service alerts`} tone="green" icon={<Wifi size={17} />} /><Stat label="Average speed" value={`${vehicles.length ? Math.round(vehicles.reduce((total, vehicle) => total + vehicle.speed, 0) / vehicles.length) : 0} km/h`} detail="From live vehicle positions" tone="coral" icon={<Gauge size={17} />} /></section>
