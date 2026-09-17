@@ -1,0 +1,80 @@
+import { StrictMode, useEffect, useMemo, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import { Activity, AlertTriangle, Bus, CableCar, ChevronRight, Clock3, Crosshair, Gauge, LocateFixed, MapPin, Radio, RefreshCw, Search, Settings2, TrainFront, TramFront, Wifi } from 'lucide-react'
+import './styles.css'
+
+type Mode = 'Metro' | 'Bus' | 'Train' | 'Tram'
+type Vehicle = { id: string; line: string; mode: Mode; destination: string; speed: number; delay: number; occupancy: number; status: string; lat: number; left: number; color: string; updated: string; nextStop: string; operator: string }
+type Site = { name: string; lat: number; lon: number }
+
+const initialVehicles: Vehicle[] = [
+  { id: 'C20-2413', line: '13', mode: 'Metro', destination: 'Norsborg', speed: 49, delay: 0, occupancy: 72, status: 'In service', lat: 37, left: 31, color: '#f04b53', updated: '12 sec ago', nextStop: 'Slussen', operator: 'MTR Tunnelbanan' },
+  { id: 'C30-3712', line: '18', mode: 'Metro', destination: 'Hagsätra', speed: 42, delay: 2, occupancy: 61, status: 'In service', lat: 53, left: 48, color: '#f04b53', updated: '18 sec ago', nextStop: 'Gamla stan', operator: 'MTR Tunnelbanan' },
+  { id: 'ER1-9021', line: '40', mode: 'Train', destination: 'Uppsala C', speed: 87, delay: 0, occupancy: 54, status: 'In service', lat: 45, left: 67, color: '#e5b72d', updated: '23 sec ago', nextStop: 'Stockholm Odenplan', operator: 'SL Pendeltåg' },
+  { id: 'B9-7711', line: '4', mode: 'Bus', destination: 'Gullmarsplan', speed: 23, delay: 5, occupancy: 84, status: 'Running late', lat: 63, left: 24, color: '#3ca477', updated: '31 sec ago', nextStop: 'Fridhemsplan', operator: 'Keolis' },
+  { id: 'A35-1204', line: '7', mode: 'Tram', destination: 'Waldemarsudde', speed: 31, delay: 1, occupancy: 38, status: 'In service', lat: 70, left: 61, color: '#1997aa', updated: '9 sec ago', nextStop: 'Djurgårdsbron', operator: 'Transdev' },
+  { id: 'C20-2208', line: '14', mode: 'Metro', destination: 'Mörby centrum', speed: 46, delay: 0, occupancy: 67, status: 'In service', lat: 26, left: 73, color: '#f04b53', updated: '14 sec ago', nextStop: 'Tekniska högskolan', operator: 'MTR Tunnelbanan' },
+  { id: 'B9-8842', line: '73', mode: 'Bus', destination: 'Karolinska sjukhuset', speed: 18, delay: 3, occupancy: 46, status: 'Running late', lat: 57, left: 82, color: '#3ca477', updated: '28 sec ago', nextStop: 'Norra Bantorget', operator: 'Keolis' },
+]
+
+const fallbackSites: Site[] = [
+  { name: 'T-Centralen', lat: 59.3318, lon: 18.0625 }, { name: 'Slussen', lat: 59.3199, lon: 18.0729 }, { name: 'Odenplan', lat: 59.3428, lon: 18.0498 }, { name: 'Fridhemsplan', lat: 59.3337, lon: 18.0313 }, { name: 'Gullmarsplan', lat: 59.2997, lon: 18.0801 }, { name: 'Liljeholmen', lat: 59.3105, lon: 18.0225 }, { name: 'Skanstull', lat: 59.3076, lon: 18.0758 }, { name: 'Karlaplan', lat: 59.3388, lon: 18.0914 }, { name: 'Stadion', lat: 59.3434, lon: 18.0916 }, { name: 'Kungsträdgården', lat: 59.3304, lon: 18.0733 }, { name: 'Hornstull', lat: 59.3153, lon: 18.0331 }, { name: 'Brommaplan', lat: 59.3383, lon: 17.9393 },
+]
+
+const railLines = [
+  { points: '7,73 21,63 34,59 45,48 52,42 64,37 78,27 94,18', color: '#ed4d59' },
+  { points: '10,15 24,25 38,35 51,42 66,51 77,62 88,77', color: '#ed4d59' },
+  { points: '6,83 23,72 38,67 51,63 66,62 83,70 96,88', color: '#f0b82f' },
+  { points: '33,5 37,20 46,35 52,42 60,58 64,78 70,95', color: '#2ba68b' },
+]
+
+function normalizeSites(data: unknown): Site[] {
+  if (!Array.isArray(data)) return fallbackSites
+  const sites = data.map((item: any) => ({ name: item.name ?? item.siteName ?? item.id ?? 'SL site', lat: Number(item.lat ?? item.latitude ?? item.position?.latitude), lon: Number(item.lon ?? item.lng ?? item.longitude ?? item.position?.longitude) })).filter((site) => Number.isFinite(site.lat) && Number.isFinite(site.lon))
+  return sites.length ? sites : fallbackSites
+}
+
+function IconForMode({ mode }: { mode: Mode }) {
+  if (mode === 'Bus') return <Bus size={15} />
+  if (mode === 'Train') return <TrainFront size={15} />
+  if (mode === 'Tram') return <TramFront size={15} />
+  return <CableCar size={15} />
+}
+
+function App() {
+  const [vehicles, setVehicles] = useState(initialVehicles)
+  const [selectedId, setSelectedId] = useState(initialVehicles[0].id)
+  const [activeMode, setActiveMode] = useState<'All' | Mode>('All')
+  const [query, setQuery] = useState('')
+  const [sites, setSites] = useState(fallbackSites)
+  const [isLive, setIsLive] = useState(true)
+  const [lastSync, setLastSync] = useState('just now')
+
+  useEffect(() => {
+    fetch('https://transport.integration.sl.se/v1/sites').then((response) => response.json()).then((data) => setSites(normalizeSites(data))).catch(() => setSites(fallbackSites))
+    const timer = window.setInterval(() => {
+      setVehicles((current) => current.map((vehicle) => ({ ...vehicle, speed: Math.max(0, vehicle.speed + Math.round((Math.random() - 0.5) * 4)), updated: 'just now' })))
+      setLastSync('just now')
+    }, 15000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const filteredVehicles = useMemo(() => vehicles.filter((vehicle) => (activeMode === 'All' || vehicle.mode === activeMode) && `${vehicle.line} ${vehicle.destination} ${vehicle.id}`.toLowerCase().includes(query.toLowerCase())), [vehicles, activeMode, query])
+  const selected = vehicles.find((vehicle) => vehicle.id === selectedId) ?? vehicles[0]
+  const lateCount = vehicles.filter((vehicle) => vehicle.delay > 0).length
+
+  return <div className="app-shell">
+    <header className="topbar"><div className="brand"><div className="brand-mark"><Activity size={21} /></div><div><strong>SL / NETWORK PULSE</strong><span>STOCKHOLM TRANSPORT CONTROL</span></div></div><div className="topbar-actions"><div className="live-state"><span className="pulse-dot" /> LIVE <small>updated {lastSync}</small></div><button className="icon-button" title="Settings"><Settings2 size={18} /></button><div className="avatar">CP</div></div></header>
+    <main>
+      <section className="headline"><div><p className="eyebrow">THURSDAY 17 SEPTEMBER 2026 / 08:42 CET</p><h1>Good morning, Carla.</h1><p className="subhead">A clear view of every moving part across the SL network.</p></div><button className={`sync-button ${isLive ? 'active' : ''}`} onClick={() => { setIsLive(!isLive); setLastSync('just now') }}><RefreshCw size={16} /> {isLive ? 'Live feed on' : 'Feed paused'}</button></section>
+      <section className="stats-grid"><Stat label="Vehicles tracked" value="1,284" detail="+3.8% vs yesterday" tone="teal" icon={<Radio size={17} />} /><Stat label="On time now" value="94.2%" detail="Within 2 min of schedule" tone="yellow" icon={<Clock3 size={17} />} /><Stat label="Network status" value="Good" detail={`${lateCount} active disruptions`} tone="green" icon={<Wifi size={17} />} /><Stat label="Average speed" value="38 km/h" detail="Across all modes" tone="coral" icon={<Gauge size={17} />} /></section>
+      <section className="workspace-grid"><div className="map-panel panel"><div className="panel-header"><div><p className="section-label">NETWORK MAP</p><h2>Greater Stockholm <span className="muted">/ all lines</span></h2></div><div className="map-tools"><button className="map-tool active"><MapPin size={15} /> Vehicles</button><button className="map-tool"><LocateFixed size={15} /> Center</button></div></div><div className="map-wrap"><div className="map-watermark">STOCKHOLM<br /><span>COUNTY</span></div><div className="map-grid" /> <svg className="rail-map" viewBox="0 0 100 100" preserveAspectRatio="none">{railLines.map((line, index) => <polyline key={index} points={line.points} stroke={line.color} />)}</svg>{sites.slice(0, 12).map((site, index) => <div key={`${site.name}-${index}`} className="station" style={{ left: `${8 + (index * 17) % 83}%`, top: `${18 + (index * 29) % 68}%` }} title={site.name} />)}{filteredVehicles.map((vehicle) => <button key={vehicle.id} className={`vehicle-marker ${selectedId === vehicle.id ? 'selected' : ''}`} style={{ left: `${vehicle.left}%`, top: `${vehicle.lat}%`, backgroundColor: vehicle.color }} onClick={() => setSelectedId(vehicle.id)} title={`${vehicle.line} to ${vehicle.destination}`}><IconForMode mode={vehicle.mode} /><span>{vehicle.line}</span></button>)}<div className="map-legend"><span><i className="legend-line metro" /> Metro</span><span><i className="legend-line train" /> Rail</span><span><i className="legend-dot" /> Station</span></div><div className="zoom-control"><button>+</button><button>-</button></div></div><div className="map-footer"><span><span className="pulse-dot" /> {sites.length.toLocaleString()} sites loaded from SL API</span><span>Map schematic · vehicle positions simulated until vehicle feed is connected</span></div></div><aside className="details-panel panel"><div className="panel-header compact"><div><p className="section-label">SELECTED VEHICLE</p><h2>{selected.line} <span className="muted">· {selected.mode}</span></h2></div><span className="status-badge"><i /> {selected.status}</span></div><div className="route-card"><div className="route-line" style={{ backgroundColor: selected.color }} /><div><span className="route-kicker">TOWARDS</span><strong>{selected.destination}</strong><span className="route-meta">Next stop: {selected.nextStop}</span></div><ChevronRight className="route-arrow" size={20} /></div><div className="detail-grid"><Detail label="Vehicle ID" value={selected.id} /><Detail label="Current speed" value={`${selected.speed} km/h`} /><Detail label="Delay" value={selected.delay ? `+${selected.delay} min` : 'On time'} danger={selected.delay > 0} /><Detail label="Occupancy" value={`${selected.occupancy}%`} /></div><div className="occupancy"><div className="detail-row"><span>Occupancy level</span><b>{selected.occupancy}%</b></div><div className="occupancy-track"><span style={{ width: `${selected.occupancy}%` }} /></div><div className="occupancy-labels"><span>Low</span><span>Moderate</span><span>High</span></div></div><div className="operator-row"><div className="operator-icon"><IconForMode mode={selected.mode} /></div><div><span>OPERATED BY</span><strong>{selected.operator}</strong></div><span className="updated">{selected.updated}</span></div><button className="full-details">View full vehicle telemetry <ChevronRight size={16} /></button></aside></section>
+      <section className="fleet-section"><div className="fleet-heading"><div><p className="section-label">FLEET OVERVIEW</p><h2>All active vehicles <span className="count">{filteredVehicles.length}</span></h2></div><div className="fleet-actions"><div className="search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search line, destination..." /></div><button className="filter-button"><AlertTriangle size={15} /> {lateCount} alerts</button></div></div><div className="filters">{(['All', 'Metro', 'Bus', 'Train', 'Tram'] as const).map((mode) => <button key={mode} onClick={() => setActiveMode(mode)} className={activeMode === mode ? 'filter active' : 'filter'}>{mode}</button>)}</div><div className="vehicle-table"><div className="table-head"><span>LINE / VEHICLE</span><span>DESTINATION</span><span>SPEED</span><span>DELAY</span><span>OCCUPANCY</span><span>STATUS</span></div>{filteredVehicles.map((vehicle) => <button className={`table-row ${selectedId === vehicle.id ? 'selected-row' : ''}`} key={vehicle.id} onClick={() => setSelectedId(vehicle.id)}><span className="line-cell"><b style={{ backgroundColor: vehicle.color }}>{vehicle.line}</b><span><strong>{vehicle.id}</strong><small>{vehicle.mode}</small></span></span><span>{vehicle.destination}</span><span>{vehicle.speed} km/h</span><span className={vehicle.delay ? 'delay' : ''}>{vehicle.delay ? `+${vehicle.delay} min` : 'On time'}</span><span><div className="mini-occupancy"><i style={{ width: `${vehicle.occupancy}%` }} /></div>{vehicle.occupancy}%</span><span className={vehicle.delay ? 'status-late' : 'status-ok'}>{vehicle.delay ? 'Running late' : 'In service'}</span></button>)}</div></section>
+    </main><footer><span>SL NETWORK PULSE <b>·</b> INTERNAL OPERATIONS VIEW</span><span>DATA SOURCES: SL TRANSPORT API <b>·</b> REFRESH 15 SEC</span></footer>
+  </div>
+}
+
+function Stat({ label, value, detail, tone, icon }: { label: string; value: string; detail: string; tone: string; icon: React.ReactNode }) { return <div className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div></div> }
+function Detail({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) { return <div className="detail"><span>{label}</span><strong className={danger ? 'danger' : ''}>{value}</strong></div> }
+
+createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
