@@ -35,6 +35,8 @@ const API_ROOT = 'https://opendata.samtrafiken.se/gtfs-rt/sl'
 const stockholmBounds = { minLat: 59.20, maxLat: 59.45, minLon: 17.75, maxLon: 18.35 }
 const colors = { Metro: '#f04b53', Bus: '#3ca477', Train: '#e5b72d', Tram: '#1997aa' }
 const MAX_POSITION_AGE_MS = 120_000
+const LIVE_DATA_CACHE_TTL_MS = 30_000
+let liveDataCache: { key: string; expiresAt: number; data: LiveTransitData } | null = null
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -68,6 +70,7 @@ async function decodeFeed(path: string, key: string): Promise<any> {
 
 export async function fetchLiveTransitData(key: string): Promise<LiveTransitData> {
   if (!key) throw new Error('Missing TRAFIKLAB_GTFS_RT_KEY')
+  if (liveDataCache?.key === key && liveDataCache.expiresAt > Date.now()) return liveDataCache.data
   const [vehicleFeed, tripFeed, alertFeed] = await Promise.all([
     decodeFeed('VehiclePositions.pb', key),
     decodeFeed('TripUpdates.pb', key),
@@ -108,7 +111,9 @@ export async function fetchLiveTransitData(key: string): Promise<LiveTransitData
     alerts.push({ id: text(entity.id) || `alert-${alerts.length + 1}`, header: text(translation?.text) || 'Service alert', description: text(description?.text), cause: text(alert?.cause), effect: text(alert?.effect) })
   }
 
-  return { vehicles, alerts, timestamp: feedTimestamp }
+  const data = { vehicles, alerts, timestamp: feedTimestamp }
+  liveDataCache = { key, expiresAt: Date.now() + LIVE_DATA_CACHE_TTL_MS, data }
+  return data
 }
 
 export function toDashboardVehicle(vehicle: LiveVehicle, index: number) {
